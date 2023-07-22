@@ -18,19 +18,20 @@ export interface NetworkStackProps extends StackProps {
 
 export class Network extends Stack {
   public readonly vpc: Vpc;
+  public readonly hostedZone: HostedZone;
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
 
     const domainName = props.domainName.toLowerCase();
 
-    const hostedZone = new HostedZone(this, `${props.appName}-HostedZone`, {
+    this.hostedZone = new HostedZone(this, `${props.appName}-HostedZone`, {
       zoneName: domainName,
     });
 
     const certificate = new Certificate(this, `${props.appName}-Certificate`, {
       domainName: domainName,
       subjectAlternativeNames: [`*.${props.domainName}`],
-      validation: CertificateValidation.fromDns(hostedZone),
+      validation: CertificateValidation.fromDns(this.hostedZone),
     });
 
     new StringParameter(this, `${props.appName}-Certificate-ARN-Param`, {

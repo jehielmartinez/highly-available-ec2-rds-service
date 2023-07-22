@@ -15,6 +15,8 @@ import {
   ApplicationLoadBalancer,
   ApplicationProtocol,
 } from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import { ARecord, HostedZone, RecordTarget } from "aws-cdk-lib/aws-route53";
+import { LoadBalancerTarget } from "aws-cdk-lib/aws-route53-targets";
 import { StringParameter } from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { readFileSync } from "fs";
@@ -22,6 +24,7 @@ import { readFileSync } from "fs";
 export interface ComputeStackProps extends StackProps {
   vpc: Vpc;
   appName: string;
+  hostedZone: HostedZone;
   minCapacity?: number;
   desiredCapacity?: number;
   maxCapacity?: number;
@@ -78,6 +81,13 @@ export class Compute extends Stack {
     httpsListener.addTargets(`${props.appName}-Lb-Target`, {
       port: 80,
       targets: [asg],
+    });
+
+    // Create DNS record to point to the load balancer
+    new ARecord(this, `${props.appName}-ARecord`, {
+      zone: props.hostedZone,
+      recordName: props.appName,
+      target: RecordTarget.fromAlias(new LoadBalancerTarget(lb)),
     });
   }
 }

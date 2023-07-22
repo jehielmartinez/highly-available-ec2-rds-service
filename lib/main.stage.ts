@@ -16,7 +16,8 @@ export class MainStage extends cdk.Stage {
 
     const compute = new Compute(this, 'ComputeStack', {
       vpc: network.vpc,
-      appName: applicationName
+      appName: applicationName,
+      hostedZone: network.hostedZone,
     });
 
   }
