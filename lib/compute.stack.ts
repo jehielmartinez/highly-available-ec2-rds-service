@@ -8,23 +8,20 @@ import {
   InstanceSize,
   InstanceType,
   MachineImage,
+  SecurityGroup,
   SubnetType,
   Vpc,
 } from "aws-cdk-lib/aws-ec2";
 import {
   ApplicationLoadBalancer,
-  ApplicationProtocol,
 } from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import { ARecord, HostedZone, RecordTarget } from "aws-cdk-lib/aws-route53";
-import { LoadBalancerTarget } from "aws-cdk-lib/aws-route53-targets";
 import { StringParameter } from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { readFileSync } from "fs";
 
 export interface ComputeStackProps extends StackProps {
-  vpc: Vpc;
   appName: string;
-  hostedZone: HostedZone;
+  vpc: Vpc;
   minCapacity?: number;
   desiredCapacity?: number;
   maxCapacity?: number;
@@ -34,9 +31,18 @@ export class Compute extends Stack {
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
+    const vpc = props.vpc;
+
+    // Import ASG Security Group
+    const asgSecurityGroup = SecurityGroup.fromSecurityGroupId(
+      this,
+      `${props.appName}-Asg-SecurityGroup`,
+      StringParameter.valueForStringParameter(this, `/${props.appName}/asg-sg`)
+    );
+
     // Auto Scaling Group
     const asg = new AutoScalingGroup(this, `${props.appName}-Asg`, {
-      vpc: props.vpc,
+      vpc,
       autoScalingGroupName: `${props.appName}-asg`.toLowerCase(),
       instanceType: InstanceType.of(InstanceClass.T4G, InstanceSize.MICRO),
       machineImage: MachineImage.latestAmazonLinux2023(),
@@ -44,6 +50,7 @@ export class Compute extends Stack {
       minCapacity: props.minCapacity ?? 1,
       maxCapacity: props.maxCapacity ?? 3,
       updatePolicy: UpdatePolicy.rollingUpdate(),
+      securityGroup: asgSecurityGroup,
       vpcSubnets: {
         subnetType: SubnetType.PRIVATE_WITH_EGRESS,
       },
@@ -53,41 +60,19 @@ export class Compute extends Stack {
 
     // Load Balancer
     const lb = new ApplicationLoadBalancer(this, `${props.appName}-Lb`, {
-      vpc: props.vpc,
+      vpc,
       internetFacing: true,
       loadBalancerName: `${props.appName}-lb`.toLowerCase(),
     });
 
-    lb.addRedirect({
-      sourceProtocol: ApplicationProtocol.HTTP,
-      sourcePort: 80,
-      targetProtocol: ApplicationProtocol.HTTPS,
-      targetPort: 443,
-    });
-
-    const httpsListener = lb.addListener(`${props.appName}-Lb-Listener`, {
-      port: 443,
+    const listener = lb.addListener(`${props.appName}-Lb-Listener`, {
+      port: 80,
       open: true,
-      certificates: [
-        {
-          certificateArn: StringParameter.valueForStringParameter(
-            this,
-            `/${props.appName}/certificate-arn`
-          ),
-        },
-      ],
     });
 
-    httpsListener.addTargets(`${props.appName}-Lb-Target`, {
+    listener.addTargets(`${props.appName}-Lb-Target`, {
       port: 80,
       targets: [asg],
-    });
-
-    // Create DNS record to point to the load balancer
-    new ARecord(this, `${props.appName}-ARecord`, {
-      zone: props.hostedZone,
-      recordName: props.appName,
-      target: RecordTarget.fromAlias(new LoadBalancerTarget(lb)),
     });
   }
 }
